@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
@@ -12,9 +12,18 @@ class OHLCVRequest(BaseModel):
     low: list[float]
     close: list[float]
 
-def clean_nan(df):
-    """Replace NaN with None for JSON serialization"""
-    return df.where(pd.notnull(df), None)
+def clean_nan(obj):
+    """Recursively replace NaN/Inf with None"""
+    if isinstance(obj, dict):
+        return {k: clean_nan(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan(v) for v in obj]
+    elif isinstance(obj, float):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return obj
+    else:
+        return obj
 
 @app.post("/fvg")
 def get_fvg(data: OHLCVRequest):
@@ -27,8 +36,10 @@ def get_fvg(data: OHLCVRequest):
     result = smc.fvg(df)
     if result is None or result.empty:
         return []
-    result = clean_nan(result)
-    return result.to_dict(orient="records")
+    # Convert to dict and clean
+    result_dict = result.to_dict(orient="records")
+    cleaned = clean_nan(result_dict)
+    return cleaned
 
 @app.post("/bos")
 def get_bos(data: OHLCVRequest):
@@ -44,8 +55,8 @@ def get_bos(data: OHLCVRequest):
     result = smc.bos_choch(df, swings)
     if result is None or result.empty:
         return []
-    result = clean_nan(result)
-    return result.to_dict(orient="records")
+    result_dict = result.to_dict(orient="records")
+    return clean_nan(result_dict)
 
 @app.post("/swings")
 def get_swings(data: OHLCVRequest):
@@ -58,9 +69,9 @@ def get_swings(data: OHLCVRequest):
     result = smc.swing_highs_lows(df)
     if result is None or result.empty:
         return []
-    result = clean_nan(result)
-    return result.to_dict(orient="records")
+    result_dict = result.to_dict(orient="records")
+    return clean_nan(result_dict)
 
 @app.get("/")
 def root():
-    return {"message": "SMC API is running. Use /fvg, /bos, or /swings endpoints."}
+    return {"message": "SMC API is running"}
